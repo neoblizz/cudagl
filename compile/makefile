@@ -7,7 +7,7 @@ CPPC     = g++ -m64
 
 CUDA_FLAGS = -I/usr/local/cuda/samples/common/inc -I/usr/local/cuda/include
 
-LFLAGS = -Lglew -Lglfw -Lgl -lcuda
+LFLAGS = -lGLEW -lglfw3 -lGL -lm -ldl -lX11 -lXxf86vm -lXrandr -lpthread -lXi -lXcursor -lXinerama
 
 all: 565rasterizer
 
@@ -30,12 +30,12 @@ objloader.o: ../src/ObjCore/objloader.cpp
 	$(CPPC) -c ../src/ObjCore/objloader.cpp
 
 565rasterizer: main.o rasterizeKernels.o glslUtility.o utilities.o obj.o objloader.o
-	$(NVCC) $(LFLAGS) $(CUDA_FLAGS) *.o -o 565rasterizer
+	$(NVCC) $(LFLAGS) $(CUDA_FLAGS) *.o -o cudagl
 
 
 clean:
 	rm *.o 
-	rm 565rasterizer
+	rm cudagl
 
 test: 565rasterizer
-	./565rasterizer
+	./cudagl
