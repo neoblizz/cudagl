@@ -1,0 +1,3 @@
+*.o
+*~
+compile/cudagl
