@@ -33,7 +33,8 @@ int main(int argc, char** argv){
 
   // Launch CUDA/GL
 
-  
+  projection = glm::perspective(fovy, float(width)/float(height), zNear, zFar);
+  view = glm::lookAt(cameraPosition, lookatPosition, glm::vec3(0,1,0));  
 
   GLFWwindow* window = initWin();
 
@@ -76,6 +77,9 @@ void runCuda(){
 
   vbo = mesh->getVBO();
   vbosize = mesh->getVBOsize();
+  
+  nbo = mesh->getNBO();
+  nbosize = mesh->getNBOsize();
 
   float newcbo[] = {0.0, 1.0, 0.0, 
                     0.0, 0.0, 1.0, 
@@ -87,7 +91,7 @@ void runCuda(){
   ibosize = mesh->getIBOsize();
 
   cudaGLMapBufferObject((void**)&dptr, pbo);
-  cudaRasterizeCore(dptr, glm::vec2(width, height), frame, vbo, vbosize, cbo, cbosize, ibo, ibosize);
+  cudaRasterizeCore(dptr, glm::vec2(width, height), frame, vbo, vbosize, cbo, cbosize, ibo, ibosize, projection, view, zNear, zFar, lightPosition, nbo, nbosize);
   cudaGLUnmapBufferObject(pbo);
 
   vbo = NULL;
