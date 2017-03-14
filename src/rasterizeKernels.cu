@@ -16,11 +16,11 @@
 
 glm::vec3* framebuffer;
 fragment* depthbuffer;
-float* device_vbo;
-float* device_cbo;
-int* device_ibo;
-float* device_vbo_eye;
-float* device_nbo;
+float* device_vbo;      //screen space vertex buffer
+float* device_cbo;      //color buffer(xyz->rgb)
+int* device_ibo;        //index buffer
+float* device_vbo_eye;  //eye_space vertex buffer
+float* device_nbo;      //eye space normal
 triangle* primitives;
 
 
@@ -165,7 +165,7 @@ __global__ void sendImageToPBO(uchar4* PBOpos, glm::vec2 resolution, glm::vec3* 
 __global__ void vertexShadeKernel(float* vbo, int vbosize, glm::vec2 resolution, glm::mat4 projection, glm::mat4 view, float zNear, float zFar, float *vbo_eye, float *nbo, int nbosize){
 
   int index = (blockIdx.x * blockDim.x) + threadIdx.x;
-  if(index<vbosize/3){
+ / if(index<vbosize/3){
     //vertex assembly
     glm::vec4 vertex(vbo[3*index], vbo[3*index+1], vbo[3*index+2], 1.0f);
     glm::vec4 normal(nbo[3*index], nbo[3*index+1], nbo[3*index+2], 1.0f);
@@ -190,7 +190,7 @@ __global__ void vertexShadeKernel(float* vbo, int vbosize, glm::vec2 resolution,
 	vbo[3*index+1] = resolution.y * 0.5f * (vertex.y + 1.0f);
 	vbo[3*index+2] = (zFar-zNear)*0.5f*vertex.z + (zFar+zNear)*0.5f;
 
-  }
+ }
 }
 
 

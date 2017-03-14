@@ -8,30 +8,36 @@
 #include "cudaMat4.h"
 
 struct triangle {
+  //screen space position of vertices 
   glm::vec3 p0;
   glm::vec3 p1;
   glm::vec3 p2;
+  //color
   glm::vec3 c0;
   glm::vec3 c1;
   glm::vec3 c2;
 
+  //eyespace position of vertices
   glm::vec3 eyeCoords0;
   glm::vec3 eyeCoords1;
   glm::vec3 eyeCoords2;
 
+  //eyespace normal
   glm::vec3 eyeNormal0;
   glm::vec3 eyeNormal1;
   glm::vec3 eyeNormal2;
 
+  //flag whethere this triangle is discarded in culling
   int toBeDiscard;
 
 };
 
 struct fragment{
-  glm::vec3 color;
-  glm::vec3 normal;
+  glm::vec3 color;  //color.xyz->color.rgb
+  glm::vec3 normal; 
   glm::vec3 position;
-
+  
+  //depth of this fragment
   float z;
 };
 

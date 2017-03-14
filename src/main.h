@@ -49,13 +49,13 @@ uchar4 *dptr;
 
 obj* mesh;
 
-float* vbo;
+float* vbo;  //vertex buffer
 int vbosize;
-float* cbo;
+float* cbo;  //color buffer(xyz->rgb)
 int cbosize;
-int* ibo;
+int* ibo;    //index buffer
 int ibosize;
-float* nbo;
+float* nbo;  //normal buffer
 int nbosize;
 //-------------------------------
 //----------CUDA STUFF-----------
