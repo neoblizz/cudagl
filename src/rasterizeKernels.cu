@@ -12,7 +12,7 @@
     #include <cutil_math.h>
 #endif
 
-#define BackfaceCulling 1
+#define BACKFACECULLING 1
 
 glm::vec3* framebuffer;
 fragment* depthbuffer;
@@ -27,10 +27,10 @@ triangle* primitives;
 void checkCUDAError(const char *msg) {
   cudaError_t err = cudaGetLastError();
   if( cudaSuccess != err) {
-    fprintf(stderr, "Cuda error: %s: %s.\n", msg, cudaGetErrorString( err) ); 
-    exit(EXIT_FAILURE); 
+    fprintf(stderr, "Cuda error: %s: %s.\n", msg, cudaGetErrorString( err) );
+    exit(EXIT_FAILURE);
   }
-} 
+}
 
 //Handy dandy little hashing function that provides seeds for random number generation
 __host__ __device__ unsigned int hash(unsigned int a){
@@ -124,19 +124,20 @@ __global__ void clearDepthBuffer(glm::vec2 resolution, fragment* buffer, fragmen
       f.position.x = x;
       f.position.y = y;
       buffer[index] = f;
+      // depth[index] = f.position.z * INT_MAX;
     }
 }
 
-//Kernel that writes the image to the OpenGL PBO directly. 
+//Kernel that writes the image to the OpenGL PBO directly.
 __global__ void sendImageToPBO(uchar4* PBOpos, glm::vec2 resolution, glm::vec3* image){
-  
+
   int x = (blockIdx.x * blockDim.x) + threadIdx.x;
   int y = (blockIdx.y * blockDim.y) + threadIdx.y;
   int index = x + (y * resolution.x);
-  
+
   if(x<=resolution.x && y<=resolution.y){
 
-      glm::vec3 color;      
+      glm::vec3 color;
       color.x = image[index].x*255.0;
       color.y = image[index].y*255.0;
       color.z = image[index].z*255.0;
@@ -152,10 +153,10 @@ __global__ void sendImageToPBO(uchar4* PBOpos, glm::vec2 resolution, glm::vec3* 
       if(color.z>255){
         color.z = 255;
       }
-      
+
       // Each thread writes one pixel location in the texture (textel)
       PBOpos[index].w = 0;
-      PBOpos[index].x = color.x;     
+      PBOpos[index].x = color.x;
       PBOpos[index].y = color.y;
       PBOpos[index].z = color.z;
   }
@@ -174,13 +175,13 @@ __global__ void vertexShadeKernel(float* vbo, int vbosize, glm::vec2 resolution,
 	vbo_eye[3*index]   = vertex.x;
 	vbo_eye[3*index+1] = vertex.y;
 	vbo_eye[3*index+2] = vertex.z;
-	  	 
+
 	// transform normal to eye space
 	normal = glm::transpose(glm::inverse(view))*normal;
 	nbo[3*index]   = normal.x;
 	nbo[3*index+1] = normal.y;
-	nbo[3*index+2] = normal.z;	 
-	  
+	nbo[3*index+2] = normal.z;
+
 	// project to clip space
 	vertex = projection* vertex;
 	// transform to NDC
@@ -198,76 +199,143 @@ __global__ void primitiveAssemblyKernel(float* vbo, int vbosize, float* cbo, int
   int index = (blockIdx.x * blockDim.x) + threadIdx.x;
   int primitivesCount = ibosize/3;
   if(index<primitivesCount){
-	primitives[index].p0.x = vbo[3*ibo[3*index]];     
-	primitives[index].p0.y = vbo[3*ibo[3*index]+1];     
+	primitives[index].p0.x = vbo[3*ibo[3*index]];
+	primitives[index].p0.y = vbo[3*ibo[3*index]+1];
 	primitives[index].p0.z = vbo[3*ibo[3*index]+2];
-	
-	primitives[index].p1.x = vbo[3*ibo[3*index+1]];   
-	primitives[index].p1.y = vbo[3*ibo[3*index+1]+1];   
-	primitives[index].p1.z = vbo[3*ibo[3*index+1]+2];
-	
 
-	primitives[index].p2.x = vbo[3*ibo[3*index+2]];   
-	primitives[index].p2.y = vbo[3*ibo[3*index+2]+1];   
+	primitives[index].p1.x = vbo[3*ibo[3*index+1]];
+	primitives[index].p1.y = vbo[3*ibo[3*index+1]+1];
+	primitives[index].p1.z = vbo[3*ibo[3*index+1]+2];
+
+
+	primitives[index].p2.x = vbo[3*ibo[3*index+2]];
+	primitives[index].p2.y = vbo[3*ibo[3*index+2]+1];
 	primitives[index].p2.z = vbo[3*ibo[3*index+2]+2];
 
-	primitives[index].eyeCoords0.x = vbo_eye[3*ibo[3*index]];     
-	primitives[index].eyeCoords0.y = vbo_eye[3*ibo[3*index]+1];      
+	primitives[index].eyeCoords0.x = vbo_eye[3*ibo[3*index]];
+	primitives[index].eyeCoords0.y = vbo_eye[3*ibo[3*index]+1];
 	primitives[index].eyeCoords0.z = vbo_eye[3*ibo[3*index]+2];
-	
-	primitives[index].eyeCoords1.x = vbo_eye[3*ibo[3*index+1]];   
-	primitives[index].eyeCoords1.y = vbo_eye[3*ibo[3*index+1]+1];    
+
+	primitives[index].eyeCoords1.x = vbo_eye[3*ibo[3*index+1]];
+	primitives[index].eyeCoords1.y = vbo_eye[3*ibo[3*index+1]+1];
 	primitives[index].eyeCoords1.z = vbo_eye[3*ibo[3*index+1]+2];
-	
-	primitives[index].eyeCoords2.x = vbo_eye[3*ibo[3*index+2]];   
-	primitives[index].eyeCoords2.y = vbo_eye[3*ibo[3*index+2]+1];    
+
+	primitives[index].eyeCoords2.x = vbo_eye[3*ibo[3*index+2]];
+	primitives[index].eyeCoords2.y = vbo_eye[3*ibo[3*index+2]+1];
 	primitives[index].eyeCoords2.z = vbo_eye[3*ibo[3*index+2]+2];
 
-	primitives[index].eyeNormal0.x = nbo[3*ibo[3*index]];      
-	primitives[index].eyeNormal0.y = nbo[3*ibo[3*index]+1];     
+	primitives[index].eyeNormal0.x = nbo[3*ibo[3*index]];
+	primitives[index].eyeNormal0.y = nbo[3*ibo[3*index]+1];
 	primitives[index].eyeNormal0.z = nbo[3*ibo[3*index]+2];
 
-	primitives[index].eyeNormal1.x = nbo[3*ibo[3*index+1]];    
-	primitives[index].eyeNormal1.y = nbo[3*ibo[3*index+1]+1];   
+	primitives[index].eyeNormal1.x = nbo[3*ibo[3*index+1]];
+	primitives[index].eyeNormal1.y = nbo[3*ibo[3*index+1]+1];
 	primitives[index].eyeNormal1.z = nbo[3*ibo[3*index+1]+2];
-	
-	primitives[index].eyeNormal2.x = nbo[3*ibo[3*index+2]];    
-	primitives[index].eyeNormal2.y = nbo[3*ibo[3*index+2]+1];   
+
+	primitives[index].eyeNormal2.x = nbo[3*ibo[3*index+2]];
+	primitives[index].eyeNormal2.y = nbo[3*ibo[3*index+2]+1];
 	primitives[index].eyeNormal2.z = nbo[3*ibo[3*index+2]+2];
 
-	primitives[index].c0.x = cbo[0];		   
-	primitives[index].c0.y = cbo[1];         
-	primitives[index].c0.z = cbo[2];  
-	
-	primitives[index].c1.x = cbo[3];         
-	primitives[index].c1.y = cbo[4];		    
+	primitives[index].c0.x = cbo[0];
+	primitives[index].c0.y = cbo[1];
+	primitives[index].c0.z = cbo[2];
+
+	primitives[index].c1.x = cbo[3];
+	primitives[index].c1.y = cbo[4];
 	primitives[index].c1.z = cbo[5];
 
-	primitives[index].c2.x = cbo[6];         
-	primitives[index].c2.y = cbo[7];         
+	primitives[index].c2.x = cbo[6];
+	primitives[index].c2.y = cbo[7];
 	primitives[index].c2.z = cbo[8];
 
 	primitives[index].toBeDiscard = 0;
 
-#if defined(BackfaceCulling) 
+#if defined(BACKFACECULLING)
    if(calculateSignedArea(primitives[index]) < 1e-6) {
       primitives[index].toBeDiscard = 1; // back facing triangles
    }else{
       glm::vec3 triMin, triMax;
       getAABBForTriangle(primitives[index], triMin, triMax);
-         if(triMin.x > resolution.x || triMin.y > resolution.y || triMin.z > zFar || 
-           triMax.x < 0|| triMax.y < 0 || triMax.z < zNear) 
+         if(triMin.x > resolution.x || triMin.y > resolution.y || triMin.z > zFar ||
+           triMax.x < 0|| triMax.y < 0 || triMax.z < zNear)
            primitives[index].toBeDiscard = 1;
    }
-	  
-#endif		
+
+#endif
   }
 }
 
-//TODO: Implement a rasterization method, such as scanline.
+
 __global__ void rasterizationKernel(triangle* primitives, int primitivesCount, fragment* depthbuffer, glm::vec2 resolution){
   int index = (blockIdx.x * blockDim.x) + threadIdx.x;
   if(index<primitivesCount){
+
+#if defined(BACKFACECULLING)
+	  if(primitives[index].toBeDiscard)
+		  return;
+#endif
+
+	  //get triangle bounding box
+	  glm::vec3 boxMin(0);
+	  glm::vec3 boxMax(0);
+	  getAABBForTriangle(primitives[index],boxMin,boxMax);
+
+	  //get corresponding pixel for bounding box
+	  glm::vec2 pixelMin = convertWorldToPixel(boxMin,resolution);
+	  glm::vec2 pixelMax = convertWorldToPixel(boxMax,resolution);
+
+	  pixelMin.x = max((int)pixelMin.x,0);
+	  pixelMax.x = min((int)pixelMax.x,(int)resolution.x-1);
+	  pixelMax.y = max((int)pixelMax.y,0);
+	  pixelMin.y = min((int)pixelMin.y,(int)resolution.y-1);
+
+	  fragment frag;
+	  int fragIdx = 0;
+	  for(int y  = pixelMax.y; y <= pixelMin.y; y++){
+
+		  //loop from xmin to xmax
+		  for(int x = pixelMin.x; x <= pixelMax.x; x++) {
+			  fragIdx = x + y * resolution.x;
+
+			  //get pixel position in Canonical View Volumes
+			  glm::vec2 pixelPoint;
+			  pixelPoint.x = (2.0 * x / (float) resolution.x) - 1;
+			  pixelPoint.y = 1 - (2.0 * y / (float) resolution.y);
+
+			  //get barycentricCoordinate
+			  glm::vec3 barycCoord = calculateBarycentricCoordinate(primitives[index],pixelPoint);
+
+        //check if pixel is within the triangle
+			  if(!isBarycentricCoordInBounds(barycCoord)) {
+				  continue;
+			  }
+
+			  //get depth value
+			  float depth = getZAtCoordinate(barycCoord,primitives[index]);
+
+			  //in normalized device coordinate
+			  frag.position = glm::vec3(pixelPoint.x,pixelPoint.y,depth);
+			  //color interpolation
+			  // frag.color = barycCoord.x * primitives[index].c0 + barycCoord.y * primitives[index].c1 + barycCoord.z * primitives[index].c2;
+			  // frag.color = mat.diffuseColor;
+
+			  frag.normal = (primitives[index].eyeNormal0 + primitives[index].eyeNormal1
+                      + primitives[index].eyeNormal2) / (float)3.0;
+
+			  bool wait = true;
+			  while(wait) {
+				  if(atomicExch(&(depthbuffer[fragIdx].lock), 1) == 0)
+				  {
+					  if(depthbuffer[fragIdx].position.x <= -10000 || frag.position.z > depthbuffer[fragIdx].position.z)
+					  {
+						  depthbuffer[fragIdx] = frag;
+					  }
+					  depthbuffer[fragIdx].lock = 0;
+					  wait = false;
+				  }
+			  }
+		  }
+	  }
   }
 }
 
@@ -319,20 +387,24 @@ void cudaRasterizeCore(uchar4* PBOpos, glm::vec2 resolution, float frame, float*
   //set up framebuffer
   framebuffer = NULL;
   cudaMalloc((void**)&framebuffer, (int)resolution.x*(int)resolution.y*sizeof(glm::vec3));
-  
+
   //set up depthbuffer
   depthbuffer = NULL;
   cudaMalloc((void**)&depthbuffer, (int)resolution.x*(int)resolution.y*sizeof(fragment));
 
+  // depth = NULL;
+  // cudaMalloc((void**)&depth, (int)resolution.x * (int)resolution.y * sizeof(fragment));
+
   //kernel launches to black out accumulated/unaccumlated pixel buffers and clear our scattering states
   clearImage<<<fullBlocksPerGrid, threadsPerBlock>>>(resolution, framebuffer, glm::vec3(0,0,0));
-  
+
   fragment frag;
   frag.color = glm::vec3(0,0,0);
   frag.normal = glm::vec3(0,0,0);
   frag.position = glm::vec3(0,0,-10000);
+  frag.lock = 0;
   frag.z = -FLT_MAX;
-  clearDepthBuffer<<<fullBlocksPerGrid, threadsPerBlock>>>(resolution, depthbuffer,frag);
+  clearDepthBuffer<<<fullBlocksPerGrid, threadsPerBlock>>>(resolution, depthbuffer, frag);
 
   //------------------------------
   //memory stuff
@@ -349,10 +421,10 @@ void cudaRasterizeCore(uchar4* PBOpos, glm::vec2 resolution, float frame, float*
   cudaMemcpy( device_vbo, vbo, vbosize*sizeof(float), cudaMemcpyHostToDevice);
 
   device_vbo_eye = NULL;
-  cudaMalloc((void**)&device_vbo_eye, vbosize*sizeof(float)); 
+  cudaMalloc((void**)&device_vbo_eye, vbosize*sizeof(float));
 
   device_nbo = NULL;
-  cudaMalloc((void**)&device_nbo, nbosize*sizeof(float)); 
+  cudaMalloc((void**)&device_nbo, nbosize*sizeof(float));
   cudaMemcpy( device_nbo, nbo, nbosize*sizeof(float), cudaMemcpyHostToDevice);
 
   device_cbo = NULL;
@@ -408,4 +480,3 @@ void kernelCleanup(){
   cudaFree( device_nbo );
   cudaFree( device_vbo_eye );
 }
-
