@@ -9,7 +9,7 @@ CUDA_FLAGS = -I/usr/local/cuda/samples/common/inc -I/usr/local/cuda/include
 
 LFLAGS = -lGLEW -lglfw3 -lGL -lm -ldl -lX11 -lXxf86vm -lXrandr -lpthread -lXi -lXcursor -lXinerama
 
-all: 565rasterizer
+all: cudagl
 
 rasterizeKernels.o: ../src/rasterizeKernels.cu ../src/rasterizeKernels.h ../src/rasterizeTools.h ../src/utilities.h ../src/cudaMat4.h 
 	$(NVCC) $(CUDA_FLAGS) -c ../src/rasterizeKernels.cu
@@ -29,7 +29,7 @@ obj.o: ../src/ObjCore/obj.cpp
 objloader.o: ../src/ObjCore/objloader.cpp
 	$(CPPC) -c ../src/ObjCore/objloader.cpp
 
-565rasterizer: main.o rasterizeKernels.o glslUtility.o utilities.o obj.o objloader.o
+cudagl: main.o rasterizeKernels.o glslUtility.o utilities.o obj.o objloader.o
 	$(NVCC) $(LFLAGS) $(CUDA_FLAGS) *.o -o cudagl
 
 
@@ -37,5 +37,5 @@ clean:
 	rm *.o 
 	rm cudagl
 
-test: 565rasterizer
+test: cudagl
 	./cudagl
