@@ -29,15 +29,15 @@ struct triangle {
 
   //flag whethere this triangle is discarded in culling
   int toBeDiscard;
-
 };
 
 struct fragment{
   glm::vec3 color;  //color.xyz->color.rgb
   glm::vec3 normal; 
-  glm::vec3 position;
-  
+  glm::vec3 position;  
   //depth of this fragment
+
+  int lock;
   float z;
 };
 
@@ -52,10 +52,10 @@ __host__ __device__ glm::vec3 multiplyMV(cudaMat4 m, glm::vec4 v){
 
 //LOOK: finds the axis aligned bounding box for a given triangle
 __host__ __device__ void getAABBForTriangle(triangle tri, glm::vec3& minpoint, glm::vec3& maxpoint){
-  minpoint = glm::vec3(min(min(tri.p0.x, tri.p1.x),tri.p2.x), 
+  minpoint = glm::vec3(min(min(tri.p0.x, tri.p1.x),tri.p2.x),
         min(min(tri.p0.y, tri.p1.y),tri.p2.y),
         min(min(tri.p0.z, tri.p1.z),tri.p2.z));
-  maxpoint = glm::vec3(max(max(tri.p0.x, tri.p1.x),tri.p2.x), 
+  maxpoint = glm::vec3(max(max(tri.p0.x, tri.p1.x),tri.p2.x),
         max(max(tri.p0.y, tri.p1.y),tri.p2.y),
         max(max(tri.p0.z, tri.p1.z),tri.p2.z));
 }
@@ -85,6 +85,18 @@ __host__ __device__ bool isBarycentricCoordInBounds(glm::vec3 barycentricCoord){
    return barycentricCoord.x >= 0.0 && barycentricCoord.x <= 1.0 &&
           barycentricCoord.y >= 0.0 && barycentricCoord.y <= 1.0 &&
           barycentricCoord.z >= 0.0 && barycentricCoord.z <= 1.0;
+}
+
+__host__ __device__ glm::vec3 baryinterp(glm::vec3 bary, glm::vec3 v0, glm::vec3 v1, glm::vec3 v2){
+    return bary.x * v0 + bary.y * v1 + bary.z * v2;
+}
+
+// Converts the fragments from world to pixel.
+__host__ __device__ glm::vec2 convertWorldToPixel(glm::vec3 position,glm::vec2 resolusion){
+	int x, y;
+	x = (int)round(((position.x+1)/2.0)*resolusion.x);
+	y = (int)round(((1-position.y)/2.0)*resolusion.y);
+	return glm::vec2(x,y);
 }
 
 //LOOK: for a given barycentric coordinate, return the corresponding z position on the triangle
