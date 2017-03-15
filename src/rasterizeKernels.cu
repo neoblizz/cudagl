@@ -166,7 +166,7 @@ __global__ void sendImageToPBO(uchar4* PBOpos, glm::vec2 resolution, glm::vec3* 
 __global__ void vertexShadeKernel(float* vbo, int vbosize, glm::vec2 resolution, glm::mat4 projection, glm::mat4 view, float zNear, float zFar, float *vbo_eye, float *nbo, int nbosize){
 
   int index = (blockIdx.x * blockDim.x) + threadIdx.x;
- / if(index<vbosize/3){
+  if(index<vbosize/3){
     //vertex assembly
     glm::vec4 vertex(vbo[3*index], vbo[3*index+1], vbo[3*index+2], 1.0f);
     glm::vec4 normal(nbo[3*index], nbo[3*index+1], nbo[3*index+2], 1.0f);

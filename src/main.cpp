@@ -32,13 +32,25 @@ int main(int argc, char** argv){
   fpstracker = 0;
 
   // Launch CUDA/GL
-
+  
+  
   projection = glm::perspective(fovy, float(width)/float(height), zNear, zFar);
   view = glm::lookAt(cameraPosition, lookatPosition, glm::vec3(0,1,0));  
-
+  
   GLFWwindow* window = initWin();
+  cout << "window initiated\n" << endl;
+  
+  glfwMakeContextCurrent(window);
+  
+  glewExperimental = GL_TRUE; 
+  GLenum err = glewInit();
+  if(GLEW_OK != err) 
+  {
+     cout << "glewInit() failed, aborting." << err << endl;
+     exit(1);
+  }
 
-
+  
   initCuda();
 
   initVAO();
@@ -50,6 +62,7 @@ int main(int argc, char** argv){
   glUseProgram(passthroughProgram);
   glActiveTexture(GL_TEXTURE0);
 
+  
   // send into GLFW main loop
   while(1){
     display(window);
@@ -208,7 +221,6 @@ void initCuda(){
 
   // Clean up on program exit
   atexit(cleanupCuda);
-
   runCuda();
 }
 
