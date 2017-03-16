@@ -1,9 +1,24 @@
-
 #include "main.h"
 
 //-------------------------------
 //-------------MAIN--------------
 //-------------------------------
+
+// Camera
+glm::mat4 cam = glm::mat4( 1.0 ); // eye
+// Projection matrix
+glm::mat4 projection = glm::perspective(60.0f, 1.0f, 0.1f, 100.0f);
+// Light
+glm::vec3 light( 1.0, 1.0, 1.0 );
+// Drawing mode
+int draw_mode = DRAW_COLOR;
+
+// Mouse interactivity
+int mouse_left_down = false;
+int mouse_right_down = false;
+int mouse_in_down = false;
+glm::vec2 prev_xy;
+
 
 int main(int argc, char** argv){
 
@@ -32,25 +47,20 @@ int main(int argc, char** argv){
   fpstracker = 0;
 
   // Launch CUDA/GL
-  
-  
-  projection = glm::perspective(fovy, float(width)/float(height), zNear, zFar);
-  view = glm::lookAt(cameraPosition, lookatPosition, glm::vec3(0,1,0));  
-  
-  GLFWwindow* window = initWin();
-  cout << "window initiated\n" << endl;
-  
-  glfwMakeContextCurrent(window);
-  
-  glewExperimental = GL_TRUE; 
-  GLenum err = glewInit();
-  if(GLEW_OK != err) 
-  {
-     cout << "glewInit() failed, aborting." << err << endl;
-     exit(1);
-  }
+  #ifdef __APPLE__
+  // Needed in OSX to force use of OpenGL3.2
+  glfwOpenWindowHint(GLFW_OPENGL_VERSION_MAJOR, 3);
+  glfwOpenWindowHint(GLFW_OPENGL_VERSION_MINOR, 2);
+  glfwOpenWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
+  glfwOpenWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+  init();
+  #else
+  init(argc, argv);
+  #endif
 
-  
+  // Initialize camera position
+  cam = glm::translate( cam, glm::vec3( 0.0, 0.0, 2.0f ) );
+
   initCuda();
 
   initVAO();
@@ -62,19 +72,26 @@ int main(int argc, char** argv){
   glUseProgram(passthroughProgram);
   glActiveTexture(GL_TEXTURE0);
 
-  
-  // send into GLFW main loop
-  while(1){
-    display(window);
-    if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS || glfwWindowShouldClose(window) ){
-        kernelCleanup();
-        cudaDeviceReset(); 
-        exit(0);
+  #ifdef __APPLE__
+    // send into GLFW main loop
+    while(1){
+      display();
+      if (glfwGetKey(GLFW_KEY_ESC) == GLFW_PRESS || !glfwGetWindowParam( GLFW_OPENED )){
+          kernelCleanup();
+          cudaDeviceReset();
+          exit(0);
+      }
     }
-  }
 
-  glfwTerminate();
+    glfwTerminate();
+  #else
+    glutDisplayFunc(display);
+    glutKeyboardFunc(keyboard);
+    glutMouseFunc(mouse);
+    glutMotionFunc(mouse_motion);
 
+    glutMainLoop();
+  #endif
   kernelCleanup();
   return 0;
 }
@@ -90,12 +107,9 @@ void runCuda(){
 
   vbo = mesh->getVBO();
   vbosize = mesh->getVBOsize();
-  
-  nbo = mesh->getNBO();
-  nbosize = mesh->getNBOsize();
 
-  float newcbo[] = {0.0, 1.0, 0.0, 
-                    0.0, 0.0, 1.0, 
+  float newcbo[] = {0.0, 1.0, 0.0,
+                    0.0, 0.0, 1.0,
                     1.0, 0.0, 0.0};
   cbo = newcbo;
   cbosize = 9;
@@ -103,8 +117,12 @@ void runCuda(){
   ibo = mesh->getIBO();
   ibosize = mesh->getIBOsize();
 
+  nbo = mesh->getNBO();
+  nbosize = mesh->getNBOsize();
+
   cudaGLMapBufferObject((void**)&dptr, pbo);
-  cudaRasterizeCore(dptr, glm::vec2(width, height), frame, vbo, vbosize, cbo, cbosize, ibo, ibosize, projection, view, zNear, zFar, lightPosition, nbo, nbosize);
+
+  cudaRasterizeCore(glm::inverse(cam), projection, light, draw_mode, dptr, glm::vec2(width, height), frame, vbo, vbosize, nbo, nbosize, cbo, cbosize, ibo, ibosize);
   cudaGLUnmapBufferObject(pbo);
 
   vbo = NULL;
@@ -116,85 +134,184 @@ void runCuda(){
 
 }
 
+void display(){
 
+  // DEBUG: display only one frame
+  /*
+  if ( frame > 5 )
+    return;
+  */
+  runCuda();
+time_t seconds2 = time (NULL);
 
-void display(GLFWwindow* window){
-    runCuda();
-    time_t seconds2 = time (NULL);
+  if(seconds2-seconds >= 1){
 
-    if(seconds2-seconds >= 1){
+    fps = fpstracker/(seconds2-seconds);
+    fpstracker = 0;
+    seconds = seconds2;
 
-      fps = fpstracker/(seconds2-seconds);
-      fpstracker = 0;
-      seconds = seconds2;
+  }
 
-    }
+  string title = "CIS565 Rasterizer | "+ utilityCore::convertIntToString((int)fps) + "FPS";
+  glutSetWindowTitle(title.c_str());
 
-    string title =  utilityCore::convertIntToString((int)fps) + "FPS";
+  glBindBuffer( GL_PIXEL_UNPACK_BUFFER, pbo);
+  glBindTexture(GL_TEXTURE_2D, displayImage);
+  glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height,
+      GL_RGBA, GL_UNSIGNED_BYTE, NULL);
 
-    glfwSetWindowTitle(window, title.c_str());
+  glClear(GL_COLOR_BUFFER_BIT);
 
+  // VAO, shader program, and texture already bound
+  glDrawElements(GL_TRIANGLES, 6,  GL_UNSIGNED_SHORT, 0);
 
-    glBindBuffer( GL_PIXEL_UNPACK_BUFFER, pbo);
-    glBindTexture(GL_TEXTURE_2D, displayImage);
-    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, 
-          GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+  glutPostRedisplay();
+  glutSwapBuffers();
+}
 
+void mouse_motion( int x, int y ) {
+  glm::vec2 current_xy;
+  glm::vec2 dxy;
+  if ( mouse_left_down ) {
+    current_xy = glm::vec2(x,y);
+    dxy = current_xy - prev_xy;
+    prev_xy = current_xy;
 
-    glClear(GL_COLOR_BUFFER_BIT);   
+    printf(" dxy: [%f, %f] \n", dxy.x, dxy.y );
+    cam = glm::rotate( cam, -dxy.x/5.0f, glm::vec3(0.0, 1.0, 0.0));
+    cam = glm::rotate( cam, dxy.y/5.0f, glm::vec3(1.0, 0.0, 0.0));
+  }
+  if ( mouse_right_down ) {
+    current_xy = glm::vec2(x,y);
+    dxy = current_xy - prev_xy;
+    prev_xy = current_xy;
 
-    // VAO, shader program, and texture already bound
-    glDrawElements(GL_TRIANGLES, 6,  GL_UNSIGNED_SHORT, 0);
+    printf(" dxy: [%f, %f] \n", dxy.x, dxy.y );
+    cam = glm::translate( cam, glm::vec3(-4.0*dxy.x/width, 0.0, 0.0));
+    cam = glm::translate( cam, glm::vec3(0.0, -4.0*dxy.y/height, 0.0));
+  }
+ if ( mouse_in_down ) {
+    current_xy = glm::vec2(x,y);
+    dxy = current_xy - prev_xy;
+    prev_xy = current_xy;
 
-    glfwSwapBuffers(window);
+    printf(" dxy: [%f, %f] \n", dxy.x, dxy.y );
+    cam = glm::translate( cam, glm::vec3(0.0, 0.0, 5.0*dxy.y/width));
+    cam = glm::rotate( cam, dxy.x/5.0f, glm::vec3(0.0, 0.0, 1.0));
+
+ }
+
+}
+
+// Mouse interactive camera
+void mouse( int button, int state, int x, int y ) {
+  int modifier = glutGetModifiers();
+  if ( button == GLUT_LEFT_BUTTON && state == GLUT_DOWN && modifier != GLUT_ACTIVE_SHIFT && modifier != GLUT_ACTIVE_CTRL) {
+    printf( "mouse_down: true \n" );
+    mouse_left_down = true;
+    prev_xy = glm::vec2( x, y );
+  }
+  if ( button == GLUT_LEFT_BUTTON && state == GLUT_UP ) {
+    printf( "mouse_down: false \n" );
+    mouse_left_down = false;
+  }
+  if ( button == GLUT_LEFT_BUTTON && state == GLUT_DOWN && modifier == GLUT_ACTIVE_SHIFT && modifier != GLUT_ACTIVE_CTRL ) {
+    printf( "mouse_down: true \n" );
+    mouse_right_down = true;
+    prev_xy = glm::vec2( x, y );
+  }
+  if ( button == GLUT_LEFT_BUTTON && state == GLUT_UP ) {
+    printf( "mouse_down: false \n" );
+    mouse_right_down = false;
+  }
+  if ( button == GLUT_LEFT_BUTTON && state == GLUT_DOWN && modifier != GLUT_ACTIVE_SHIFT && modifier == GLUT_ACTIVE_CTRL ) {
+    printf( "mouse_down: true \n" );
+    mouse_in_down = true;
+    prev_xy = glm::vec2( x, y );
+  }
+  if ( button == GLUT_LEFT_BUTTON && state == GLUT_UP ) {
+    printf( "mouse_down: false \n" );
+    mouse_in_down = false;
+  }
 }
 
 
-  
+
+void keyboard(unsigned char key, int x, int y)
+{
+  switch (key)
+  {
+     case(27):
+       shut_down(1);
+       break;
+     // Rotate camera
+     case('i'):
+ cam = glm::rotate( cam, 10.0f, glm::vec3( 1.0, 0.0, 0.0 ) );
+ break;
+     case('k'):
+ cam = glm::rotate( cam, -10.0f, glm::vec3( 1.0, 0.0, 0.0 ) );
+ break;
+     case('j'):
+ cam = glm::rotate( cam, 10.0f, glm::vec3( 0.0, 1.0, 0.0 ) );
+ break;
+     case('l'):
+ cam = glm::rotate( cam, -10.0f, glm::vec3( 0.0, 1.0, 0.0 ) );
+ break;
+    // Translate camera
+    case('w'):
+ cam = glm::translate( cam, glm::vec3( 0.0, 0.0, -0.1 ) );
+ break;
+    case('s'):
+ cam = glm::translate( cam, glm::vec3( 0.0, 0.0, 0.1) );
+ break;
+    case('a'):
+ cam = glm::translate( cam, glm::vec3( 0.1, 0.0, 0.0 ) );
+ break;
+    case('d'):
+ cam = glm::translate( cam, glm::vec3( -0.1, 0.0, 0.0 ) );
+ break;
+    case('1'):
+ draw_mode = DRAW_SOLID;
+ break;
+    case('2'):
+ draw_mode = DRAW_COLOR;
+ break;
+    case('3'):
+ draw_mode = DRAW_NORMAL;
+ break;
+    case('4'):
+ draw_mode = SHADE_SOLID;
+ break;
+    case('5'):
+ draw_mode = SHADE_COLOR;
+ break;
+  }
+}
+
 //-------------------------------
 //----------SETUP STUFF----------
 //-------------------------------
 
 
-//init a window
+void init(int argc, char* argv[]){
+  glutInit(&argc, argv);
+  glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGBA);
+  glutInitWindowSize(width, height);
+  glutCreateWindow("CIS565 Rasterizer");
 
-
-GLFWwindow* initWin() {
-
-  // Needed in OSX to force use of OpenGL3.2, Linux could be other version, 3.3 mayba
-  // GLFW_OPENGL_FORWARD_COMPAT specifies whether the OpenGL context should be forward-compatible,
-  // Indicate we only want the newest core profile, rather than using backwards compatible and deprecated features.
-  glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-  glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 2);
-  glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
-  glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-  // Make the window resize-able. Not necessary
-  glfwWindowHint(GLFW_RESIZABLE, GL_FALSE);
-  if (glfwInit() != GL_TRUE){
-    shut_down(1);      
+  // Init GLEW
+  glewInit();
+  GLenum err = glewInit();
+  if (GLEW_OK != err)
+  {
+    /* Problem: glewInit failed, something is seriously wrong. */
+    std::cout << "glewInit failed, aborting." << std::endl;
+    exit (1);
   }
 
-  GLFWwindow* window = glfwCreateWindow(160, 160, "OpenGL", NULL, NULL);
-
-  // If the window fails to be created, print out the error, clean up GLFW and exit the program.
-  if(!window) {
-    std::cout << "ERROR:Failed to create GLFW window.\n" << std::endl;
-      glfwTerminate();
-      exit(EXIT_FAILURE);
-  }
-
-
-
-  // 16 bit color, no depth, alpha or stencil buffers, windowed
-  //test glfw create window
-  /*
-  if (glfwOpenWindow(width, height, 5, 6, 5, 0, 0, 0, GLFW_WINDOW) != GL_TRUE){
-    shut_down(1);
-  }*/
-
-  return window;
+  initVAO();
+  initTextures();
 }
-
 
 void initPBO(GLuint* pbo){
   if (pbo) {
@@ -202,7 +319,7 @@ void initPBO(GLuint* pbo){
     int num_texels = width*height;
     int num_values = num_texels * 4;
     int size_tex_data = sizeof(GLubyte) * num_values;
-    
+
     // Generate a buffer ID called a PBO (Pixel Buffer Object)
     glGenBuffers(1,pbo);
     // Make this the current UNPACK buffer (OpenGL is state-based)
@@ -221,6 +338,7 @@ void initCuda(){
 
   // Clean up on program exit
   atexit(cleanupCuda);
+
   runCuda();
 }
 
@@ -235,15 +353,15 @@ void initTextures(){
 
 void initVAO(void){
     GLfloat vertices[] =
-    { 
-        -1.0f, -1.0f, 
-         1.0f, -1.0f, 
-         1.0f,  1.0f, 
-        -1.0f,  1.0f, 
+    {
+        -1.0f, -1.0f,
+         1.0f, -1.0f,
+         1.0f,  1.0f,
+        -1.0f,  1.0f,
     };
 
-    GLfloat texcoords[] = 
-    { 
+    GLfloat texcoords[] =
+    {
         1.0f, 1.0f,
         0.0f, 1.0f,
         0.0f, 0.0f,
@@ -254,10 +372,10 @@ void initVAO(void){
 
     GLuint vertexBufferObjID[3];
     glGenBuffers(3, vertexBufferObjID);
-    
+
     glBindBuffer(GL_ARRAY_BUFFER, vertexBufferObjID[0]);
     glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
-    glVertexAttribPointer((GLuint)positionLocation, 2, GL_FLOAT, GL_FALSE, 0, 0); 
+    glVertexAttribPointer((GLuint)positionLocation, 2, GL_FLOAT, GL_FALSE, 0, 0);
     glEnableVertexAttribArray(positionLocation);
 
     glBindBuffer(GL_ARRAY_BUFFER, vertexBufferObjID[1]);
@@ -274,7 +392,7 @@ GLuint initShader(const char *vertexShaderPath, const char *fragmentShaderPath){
     GLint location;
 
     glUseProgram(program);
-    
+
     if ((location = glGetUniformLocation(program, "u_image")) != -1)
     {
         glUniform1i(location, 0);
@@ -296,10 +414,10 @@ void deletePBO(GLuint* pbo){
   if (pbo) {
     // unregister this buffer object with CUDA
     cudaGLUnregisterBufferObject(*pbo);
-    
+
     glBindBuffer(GL_ARRAY_BUFFER, *pbo);
     glDeleteBuffers(1, pbo);
-    
+
     *pbo = (GLuint)NULL;
   }
 }
@@ -308,11 +426,12 @@ void deleteTexture(GLuint* tex){
     glDeleteTextures(1, tex);
     *tex = (GLuint)NULL;
 }
- 
+
 void shut_down(int return_code){
   kernelCleanup();
   cudaDeviceReset();
-
+  #ifdef __APPLE__
   glfwTerminate();
-
+  #endif
+  exit(return_code);
 }

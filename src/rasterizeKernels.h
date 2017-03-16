@@ -14,6 +14,10 @@
     #include <cutil_math.h>
 #endif
 
+// Drawing modes
+enum { DRAW_SOLID, DRAW_COLOR, DRAW_NORMAL, SHADE_SOLID, SHADE_COLOR };
+
 void kernelCleanup();
-void cudaRasterizeCore(uchar4* PBOpos, glm::vec2 resolution, float frame, float* vbo, int vbosize, float* cbo, int cbosize, int* ibo, int ibosize, glm::mat4 projection, glm::mat4 view, float zNear, float zFar, glm::vec3 lightPosition, float *nbo, int nbosize);
+void cudaRasterizeCore(glm::mat4 view, glm::mat4 projection, glm::vec3 light, int draw_mode, uchar4* pos, glm::vec2 resolution, float frame, float* vbo, int vbosize, float* nbo, int nbosize, float* cbo, int cbosize, int* ibo, int ibosize);
+
 #endif //RASTERIZEKERNEL_H

@@ -4,7 +4,7 @@
 
 
 #include <GL/glew.h>
-#include <GLFW/glfw3.h>
+#include <GL/glut.h>
 
 #include <stdlib.h>
 #include <cuda_runtime.h>
@@ -24,7 +24,7 @@
 #if CUDA_VERSION >= 5000
     #include <helper_cuda.h>
     #include <helper_cuda_gl.h>
-    #define compat_getMaxGflopsDeviceId() gpuGetMaxGflopsDeviceId() 
+    #define compat_getMaxGflopsDeviceId() gpuGetMaxGflopsDeviceId()
 #else
     #include <cutil_inline.h>
     #include <cutil_gl_inline.h>
@@ -49,30 +49,20 @@ uchar4 *dptr;
 
 obj* mesh;
 
-float* vbo;  //vertex buffer
+float* vbo;
 int vbosize;
-float* cbo;  //color buffer(xyz->rgb)
+float* cbo;
 int cbosize;
-int* ibo;    //index buffer
+int* ibo;
 int ibosize;
-float* nbo;  //normal buffer
+float* nbo;
 int nbosize;
+
 //-------------------------------
 //----------CUDA STUFF-----------
 //-------------------------------
 
 int width=800; int height=800;
-
-float fovy = 70.0f;
-float zNear = 0.13f;
-float zFar = 100.0f;
-
-glm::mat4 projection;
-glm::mat4 view;
-glm::vec3 cameraPosition(0,2,5);
-glm::vec3 lookatPosition(0,2,0);
-glm::vec3 lightPosition(3.5,3.5,3.5);
-
 
 //-------------------------------
 //-------------MAIN--------------
@@ -86,8 +76,10 @@ int main(int argc, char** argv);
 
 void runCuda();
 
-
-void display(GLFWwindow* window);
+void display();
+void keyboard(unsigned char key, int x, int y);
+void mouse( int button, int state, int x, int y );
+void mouse_motion( int x, int y );
 
 
 //-------------------------------
@@ -95,8 +87,8 @@ void display(GLFWwindow* window);
 //-------------------------------
 
 
+void init(int argc, char* argv[]);
 
-GLFWwindow* initWin();
 
 void initPBO(GLuint* pbo);
 void initCuda();
@@ -112,5 +104,6 @@ void cleanupCuda();
 void deletePBO(GLuint* pbo);
 void deleteTexture(GLuint* tex);
 void shut_down(int return_code);
+
 
 #endif

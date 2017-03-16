@@ -7,6 +7,13 @@
 #include "utilities.h"
 #include "cudaMat4.h"
 
+struct vertex {
+  glm::vec3 point;
+  glm::vec3 normal;
+  glm::vec3 lightdir;
+  bool draw_flag;
+};
+
 struct triangle {
   glm::vec3 p0;
   glm::vec3 p1;

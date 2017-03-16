@@ -22,6 +22,7 @@ float* device_cbo;
 int* device_ibo;
 float* device_vbo_eye;
 float* device_nbo;
+vertex* vertices;
 triangle* primitives;
 
 
@@ -122,7 +123,6 @@ __global__ void clearDepthBuffer(glm::vec2 resolution, fragment* buffer, unsigne
     int index = x + (y * resolution.x);
     if(x<=resolution.x && y<=resolution.y){
       fragment f = frag;
-      f.normal = glm::vec3(0.0f);
       f.position.x = x;
       f.position.y = y;
       buffer[index] = f;
@@ -165,98 +165,93 @@ __global__ void sendImageToPBO(uchar4* PBOpos, glm::vec2 resolution, glm::vec3* 
 }
 
 
-__global__ void vertexShadeKernel(float* vbo, int vbosize, glm::vec2 resolution, glm::mat4 projection, glm::mat4 view, float zNear, float zFar, float *vbo_eye, float *nbo, int nbosize){
+__global__ void vertexShadeKernel(glm::mat4 view, glm::mat4 projection, glm::vec3 light, float* vbo, int vbosize, float* nbo, int nbosize, vertex* vertices ){
 
   int index = (blockIdx.x * blockDim.x) + threadIdx.x;
+  glm::vec4 point;
+  glm::vec4 point_tformd;
+  glm::vec3 normal;
   if(index<vbosize/3){
-    //vertex assembly
-    glm::vec4 vertex(vbo[3*index], vbo[3*index+1], vbo[3*index+2], 1.0f);
-    glm::vec4 normal(nbo[3*index], nbo[3*index+1], nbo[3*index+2], 1.0f);
-	
-	printf("screen space coordinate:\n");
-	printVec4(vertex);
+    // Assemble vec4 from vbo ... vertex assembly :)
+    point.x = vbo[3*index];
+    point.y = vbo[3*index+1];
+    point.z = vbo[3*index+2];
+    point.w = 1.0f;
 
-	// transform position to eye space
-	vertex = view*vertex;
-	vbo_eye[3*index]   = vertex.x;
-	vbo_eye[3*index+1] = vertex.y;
-	vbo_eye[3*index+2] = vertex.z;
+    normal.x = nbo[3*index];
+    normal.y = nbo[3*index+1];
+    normal.z = nbo[3*index+2];
 
-	// transform normal to eye space
-	normal = glm::transpose(glm::inverse(view))*normal;
-	nbo[3*index]   = normal.x;
-	nbo[3*index+1] = normal.y;
-	nbo[3*index+2] = normal.z;
+    // Model identity matrix
+    glm::mat4 model = glm::mat4( 1.0f );
 
-	// project to clip space
-	vertex = projection* vertex;
-	// transform to NDC
-	vertex /= vertex.w;
-	// viewport transform
-	vbo[3*index]   = resolution.x * 0.5f * (vertex.x + 1.0f);
-	vbo[3*index+1] = resolution.y * 0.5f * (vertex.y + 1.0f);
-	vbo[3*index+2] = (zFar-zNear)*0.5f*vertex.z + (zFar+zNear)*0.5f;
+    // Before transforming compute light direction for each vertex
+    vertices[index].lightdir = glm::normalize(light - glm::vec3( point.x, point.y, point.z ));
+    // Copy over normals
+    vertices[index].normal = normal;
 
+    // Transform vertex and normal
+    point_tformd = projection*view*model*point;
+
+    // Convert to normalized device coordinates
+    float div = 1.0f;
+    if ( abs(point_tformd.w) > 0.0f )
+      div = 1.0f/point_tformd.w;
+
+    point.x = point_tformd.x*div;
+    point.y=  point_tformd.y*div;
+    point.z = point_tformd.z*div;
+
+    // Do clipping on vertex
+    vertices[index].draw_flag = true;
+    if ( abs(point.x) >= 1.0 || abs(point.y) >= 1.0 || abs(point.z) >= 1.0 )
+      vertices[index].draw_flag = false;
+    vertices[index].point.x = point.x;
+    vertices[index].point.y = point.y;
+    vertices[index].point.z = point.z;
   }
 }
 
 
-__global__ void primitiveAssemblyKernel(float* vbo, int vbosize, float* cbo, int cbosize, int* ibo, int ibosize, triangle* primitives, float *vbo_eye, float *nbo, int nbosize, glm::vec2 resolution, float zNear, float zFar){
+__global__ void primitiveAssemblyKernel(vertex* vertices, float* cbo, int cbosize, int* ibo, int ibosize, triangle* primitives){
   int index = (blockIdx.x * blockDim.x) + threadIdx.x;
   int primitivesCount = ibosize/3;
+
+  int i0;
+  int i1;
+  int i2;
   if(index<primitivesCount){
-	primitives[index].p0.x = vbo[3*ibo[3*index]];
-	primitives[index].p0.y = vbo[3*ibo[3*index]+1];
-	primitives[index].p0.z = vbo[3*ibo[3*index]+2];
+    // Pull out indices
+    i0 = ibo[3*index];
+    i1 = ibo[3*index+1];
+    i2 = ibo[3*index+2];
 
-	primitives[index].p1.x = vbo[3*ibo[3*index+1]];
-	primitives[index].p1.y = vbo[3*ibo[3*index+1]+1];
-	primitives[index].p1.z = vbo[3*ibo[3*index+1]+2];
+    // If any vertices should be drawn then draw the whole triangle
+    primitives[index].toBeDiscard = true;
+    if ( (vertices[i0].draw_flag + vertices[i1].draw_flag + vertices[i2].draw_flag) != 0 )
+      primitives[index].toBeDiscard = false;
 
+    // Copy over vertex points
+    primitives[index].p0 = vertices[i0].point;
+    primitives[index].p1 = vertices[i1].point;
+    primitives[index].p2 = vertices[i2].point;
 
-	primitives[index].p2.x = vbo[3*ibo[3*index+2]];
-	primitives[index].p2.y = vbo[3*ibo[3*index+2]+1];
-	primitives[index].p2.z = vbo[3*ibo[3*index+2]+2];
+    // Copy over normals
+    primitives[index].eyeNormal0 = vertices[i0].normal;
+    primitives[index].eyeNormal1 = vertices[i1].normal;
+    primitives[index].eyeNormal2 = vertices[i2].normal;
 
-	primitives[index].eyeCoords0.x = vbo_eye[3*ibo[3*index]];
-	primitives[index].eyeCoords0.y = vbo_eye[3*ibo[3*index]+1];
-	primitives[index].eyeCoords0.z = vbo_eye[3*ibo[3*index]+2];
+    // Copy over vertex colors
+    primitives[index].c0 = glm::vec3( cbo[0], cbo[1], cbo[2] );
+    primitives[index].c1 = glm::vec3( cbo[3], cbo[4], cbo[5] );
+    primitives[index].c2 = glm::vec3( cbo[6], cbo[7], cbo[8] );
 
-	primitives[index].eyeCoords1.x = vbo_eye[3*ibo[3*index+1]];
-	primitives[index].eyeCoords1.y = vbo_eye[3*ibo[3*index+1]+1];
-	primitives[index].eyeCoords1.z = vbo_eye[3*ibo[3*index+1]+2];
+    // Copy over light directions
+    primitives[index].eyeCoords0 = vertices[i0].lightdir;
+    primitives[index].eyeCoords1 = vertices[i1].lightdir;
+    primitives[index].eyeCoords2 = vertices[i2].lightdir;
 
-	primitives[index].eyeCoords2.x = vbo_eye[3*ibo[3*index+2]];
-	primitives[index].eyeCoords2.y = vbo_eye[3*ibo[3*index+2]+1];
-	primitives[index].eyeCoords2.z = vbo_eye[3*ibo[3*index+2]+2];
-
-	primitives[index].eyeNormal0.x = nbo[3*ibo[3*index]];
-	primitives[index].eyeNormal0.y = nbo[3*ibo[3*index]+1];
-	primitives[index].eyeNormal0.z = nbo[3*ibo[3*index]+2];
-
-	primitives[index].eyeNormal1.x = nbo[3*ibo[3*index+1]];
-	primitives[index].eyeNormal1.y = nbo[3*ibo[3*index+1]+1];
-	primitives[index].eyeNormal1.z = nbo[3*ibo[3*index+1]+2];
-
-	primitives[index].eyeNormal2.x = nbo[3*ibo[3*index+2]];
-	primitives[index].eyeNormal2.y = nbo[3*ibo[3*index+2]+1];
-	primitives[index].eyeNormal2.z = nbo[3*ibo[3*index+2]+2];
-
-	primitives[index].c0.x = cbo[0];
-	primitives[index].c0.y = cbo[1];
-	primitives[index].c0.z = cbo[2];
-
-	primitives[index].c1.x = cbo[3];
-	primitives[index].c1.y = cbo[4];
-	primitives[index].c1.z = cbo[5];
-
-	primitives[index].c2.x = cbo[6];
-	primitives[index].c2.y = cbo[7];
-	primitives[index].c2.z = cbo[8];
-
-	primitives[index].toBeDiscard = 0;
-
-#if defined(BACKFACECULLING)
+/*#if defined(BACKFACECULLING)
    if(calculateSignedArea(primitives[index]) < 1e-6) {
       primitives[index].toBeDiscard = 1; // back facing triangles
    }else{
@@ -267,15 +262,11 @@ __global__ void primitiveAssemblyKernel(float* vbo, int vbosize, float* cbo, int
            primitives[index].toBeDiscard = 1;
    }
 
-#endif
+#endif*/
   }
 }
 
-//DONE: Implement a rasterization method, such as scanline.
-/*
-   Given triangle coordinates, converted to screen coordinates, find fragments inside of triangle using AABB and brute force barycentric coords checks
-*/
-__global__ void off_rasterizationKernel(triangle* primitives, int primitivesCount, fragment* depthbuffer, unsigned int* depth, glm::vec2 resolution) {
+__global__ void rasterizationKernel(triangle* primitives, int primitivesCount, fragment* depthbuffer, unsigned int* depth, glm::vec2 resolution) {
 
   int index = (blockIdx.x * blockDim.x) + threadIdx.x;
 
@@ -297,7 +288,7 @@ __global__ void off_rasterizationKernel(triangle* primitives, int primitivesCoun
   if ( index<primitivesCount ) {
 
     // Check if we should even bother with this triangle
-    if ( !primitives[index].toBeDiscard )
+    if ( primitives[index].toBeDiscard )
       return;
 
     // Map primitives from world to window coordinates using the viewport transform
@@ -363,102 +354,43 @@ __global__ void off_rasterizationKernel(triangle* primitives, int primitivesCoun
   }
 }
 
-__global__ void rasterizationKernel(triangle* primitives, int primitivesCount, fragment* depthbuffer, unsigned int* depth, glm::vec2 resolution){
-  int index = (blockIdx.x * blockDim.x) + threadIdx.x;
-  if(index<primitivesCount){
-
-#if defined(BACKFACECULLING)
-	  if(primitives[index].toBeDiscard)
-		  return;
-#endif
-
-	  //get triangle bounding box
-	  glm::vec3 boxMin(0);
-	  glm::vec3 boxMax(0);
-	  getAABBForTriangle(primitives[index],boxMin,boxMax);
-
-	  //get corresponding pixel for bounding box
-	  glm::vec2 pixelMin = convertWorldToPixel(boxMin,resolution);
-	  glm::vec2 pixelMax = convertWorldToPixel(boxMax,resolution);
-
-	  pixelMin.x = max((int)pixelMin.x,0);
-	  pixelMax.x = min((int)pixelMax.x,(int)resolution.x-1);
-	  pixelMax.y = max((int)pixelMax.y,0);
-	  pixelMin.y = min((int)pixelMin.y,(int)resolution.y-1);
-
-	  fragment frag;
-	  int fragIdx = 0;
-	  for(int y  = pixelMax.y; y <= pixelMin.y; y++){
-
-		  //loop from xmin to xmax
-		  for(int x = pixelMin.x; x <= pixelMax.x; x++) {
-			  fragIdx = x + y * resolution.x;
-
-			  //get pixel position in Canonical View Volumes
-			  glm::vec2 pixelPoint;
-			  pixelPoint.x = (2.0 * x / (float) resolution.x) - 1;
-			  pixelPoint.y = 1 - (2.0 * y / (float) resolution.y);
-
-			  //get barycentricCoordinate
-			  glm::vec3 barycCoord = calculateBarycentricCoordinate(primitives[index],pixelPoint);
-
-        //check if pixel is within the triangle
-			  if(!isBarycentricCoordInBounds(barycCoord)) {
-				  continue;
-			  }
-
-			  //get depth value
-			  float depth = getZAtCoordinate(barycCoord,primitives[index]);
-
-			  //in normalized device coordinate
-			  frag.position = glm::vec3(pixelPoint.x,pixelPoint.y,depth);
-			  //color interpolation
-			  frag.color = barycCoord.x * primitives[index].c0 + barycCoord.y * primitives[index].c1 + barycCoord.z * primitives[index].c2;
-			  // frag.color = mat.diffuseColor;
-
-			  frag.normal = (primitives[index].eyeNormal0 + primitives[index].eyeNormal1
-                      + primitives[index].eyeNormal2) / (float)3.0;
-
-			  bool wait = true;
-			  while(wait) {
-				  if(atomicExch(&(depthbuffer[fragIdx].lock), 1) == 0)
-				  {
-					  if(depthbuffer[fragIdx].position.x <= -10000 || frag.position.z > depthbuffer[fragIdx].position.z)
-					  {
-						  depthbuffer[fragIdx] = frag;
-					  }
-					  depthbuffer[fragIdx].lock = 0;
-					  wait = false;
-				  }
-			  }
-		  }
-	  }
-  }
-}
-
 //Implement a fragment shader
 //specular lighting, diffuse lighting, ambient lighting
 //source opengl-tutoral.org
-__global__ void fragmentShadeKernel(fragment* depthbuffer, glm::vec2 resolution, glm::vec3 lightPosition, glm::vec3* framebuffer){
+__global__ void fragmentShadeKernel( fragment* depthbuffer, glm::vec2 resolution, int draw_mode ){
   int x = (blockIdx.x * blockDim.x) + threadIdx.x;
   int y = (blockIdx.y * blockDim.y) + threadIdx.y;
   int index = x + (y * resolution.x);
+
+  fragment frag;
+
   if(x<=resolution.x && y<=resolution.y){
-	float specular = 400.0;//control width of specular lobe
-	float a = 0.1;//ambient
-	float d = 0.7;//diffuse
-	float s = 0.2;//specular
-	fragment frag = depthbuffer[index];
+    frag = getFromDepthbuffer( x, y, depthbuffer, resolution );
 
-	glm::vec3 lightVector = glm::normalize(lightPosition - frag.position);  // watch out for division by zero
-	glm::vec3 normal = glm::normalize(frag.normal); // watch out for division by zero
-	float diffuseTerm = glm::clamp(glm::dot(normal, lightVector), 0.0f, 1.0f);
-
-	glm::vec3 R = glm::normalize(reflect(-lightVector, normal)); // watch out for division by zero
-	glm::vec3 V = glm::normalize(- frag.position); // watch out for division by zero
-      	float specularTerm = pow( fmaxf(glm::dot(R, V), 0.0f), specular );
-
-	framebuffer[index] = a*frag.color + glm::vec3(1.0f) * (d*frag.color*diffuseTerm + s*specularTerm);
+    // Interactive drawing modes
+    switch (draw_mode) {
+      case( DRAW_SOLID ):
+	if ( glm::length( frag.color ) > 1e-10 )
+	  frag.color = glm::vec3( 1.0, 1.0, 1.0 );
+	break;
+      case( DRAW_COLOR ):
+	// Keep color the same
+	break;
+      case( DRAW_NORMAL ):
+	frag.color = frag.normal;
+	break;
+      case( SHADE_SOLID ):
+	// Lambertian shading
+	if ( glm::length( frag.color ) > 1e-10 )
+	  frag.color = glm::vec3( 1.0, 1.0, 1.0 );
+	frag.color = clamp(max(glm::dot( frag.normal, frag.lightdir ), 0.0f), 0.0f, 1.0f)*frag.color;
+	break;
+      case( SHADE_COLOR ):
+	// Lambertian shading
+	frag.color = clamp(max(glm::dot( frag.normal, frag.lightdir ), 0.0f), 0.0f, 1.0f)*frag.color;
+	break;
+    }
+    writeToDepthbuffer( x, y, frag, depthbuffer, resolution );
   }
 }
 
@@ -471,13 +403,12 @@ __global__ void render(glm::vec2 resolution, fragment* depthbuffer, glm::vec3* f
 
   if(x<=resolution.x && y<=resolution.y){
     framebuffer[index] = depthbuffer[index].color;
-    printf("piexel render color:\n");
-        printVec3(framebuffer[index]);
   }
 }
 
 // Wrapper for the __global__ call that sets up the kernel calls and does a ton of memory management
-void cudaRasterizeCore(uchar4* PBOpos, glm::vec2 resolution, float frame, float* vbo, int vbosize, float* cbo, int cbosize, int* ibo, int ibosize, glm::mat4 projection, glm::mat4 view, float zNear, float zFar, glm::vec3 lightPosition, float *nbo, int nbosize){
+void cudaRasterizeCore(glm::mat4 view, glm::mat4 projection, glm::vec3 light, int draw_mode, uchar4* PBOpos, glm::vec2 resolution, float frame, float* vbo, int vbosize, float* nbo, int nbosize, float* cbo, int cbosize, int* ibo, int ibosize){
+
   // set up crucial magic
   int tileSize = 8;
   dim3 threadsPerBlock(tileSize, tileSize);
@@ -511,6 +442,9 @@ void cudaRasterizeCore(uchar4* PBOpos, glm::vec2 resolution, float frame, float*
   primitives = NULL;
   cudaMalloc((void**)&primitives, (ibosize/3)*sizeof(triangle));
 
+  vertices = NULL;
+  cudaMalloc((void**)&vertices, (ibosize)*sizeof(vertex));
+
   device_ibo = NULL;
   cudaMalloc((void**)&device_ibo, ibosize*sizeof(int));
   cudaMemcpy( device_ibo, ibo, ibosize*sizeof(int), cudaMemcpyHostToDevice);
@@ -536,14 +470,14 @@ void cudaRasterizeCore(uchar4* PBOpos, glm::vec2 resolution, float frame, float*
   //------------------------------
   //vertex shader
   //------------------------------
-  vertexShadeKernel<<<primitiveBlocks, tileSize>>>(device_vbo, vbosize, resolution, projection, view, zNear, zFar, device_vbo_eye, device_nbo, nbosize);
+  vertexShadeKernel<<<primitiveBlocks, tileSize>>>(view, projection, light, device_vbo, vbosize, device_nbo, nbosize, vertices);
 
   cudaDeviceSynchronize();
   //------------------------------
   //primitive assembly
   //------------------------------
   primitiveBlocks = ceil(((float)ibosize/3)/((float)tileSize));
-  primitiveAssemblyKernel<<<primitiveBlocks, tileSize>>>(device_vbo, vbosize, device_cbo, cbosize, device_ibo, ibosize, primitives, device_vbo_eye, device_nbo, nbosize, resolution, zNear, zFar);
+  primitiveAssemblyKernel<<<primitiveBlocks, tileSize>>>(vertices, device_cbo, cbosize, device_ibo, ibosize, primitives);
   cudaDeviceSynchronize();
   //------------------------------
   //rasterization
@@ -554,9 +488,7 @@ void cudaRasterizeCore(uchar4* PBOpos, glm::vec2 resolution, float frame, float*
   //------------------------------
   //fragment shader
   //------------------------------
-  glm::vec4 light_eyespace = view * glm::vec4(lightPosition, 1.0f);
-  lightPosition = glm::vec3(light_eyespace.x, light_eyespace.y, light_eyespace.z);
-  fragmentShadeKernel<<<fullBlocksPerGrid, threadsPerBlock>>>(depthbuffer, resolution, lightPosition, framebuffer);
+  fragmentShadeKernel<<<fullBlocksPerGrid, threadsPerBlock>>>(depthbuffer, resolution, draw_mode);
   cudaDeviceSynchronize();
   //------------------------------
   //write fragments to framebuffer
@@ -573,6 +505,7 @@ void cudaRasterizeCore(uchar4* PBOpos, glm::vec2 resolution, float frame, float*
 
 void kernelCleanup(){
   cudaFree( primitives );
+  cudaFree( vertices );
   cudaFree( device_vbo );
   cudaFree( device_cbo );
   cudaFree( device_ibo );
