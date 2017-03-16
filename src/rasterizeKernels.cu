@@ -16,11 +16,12 @@
 
 glm::vec3* framebuffer;
 fragment* depthbuffer;
-float* device_vbo;      //screen space vertex buffer
-float* device_cbo;      //color buffer(xyz->rgb)
-int* device_ibo;        //index buffer
-float* device_vbo_eye;  //eye_space vertex buffer
-float* device_nbo;      //eye space normal
+unsigned int* depth;
+float* device_vbo;
+float* device_cbo;
+int* device_ibo;
+float* device_vbo_eye;
+float* device_nbo;
 triangle* primitives;
 
 
@@ -115,7 +116,7 @@ __global__ void clearImage(glm::vec2 resolution, glm::vec3* image, glm::vec3 col
 }
 
 //Kernel that clears a given fragment buffer with a given fragment
-__global__ void clearDepthBuffer(glm::vec2 resolution, fragment* buffer, fragment frag){
+__global__ void clearDepthBuffer(glm::vec2 resolution, fragment* buffer, unsigned int* depth, fragment frag){
     int x = (blockIdx.x * blockDim.x) + threadIdx.x;
     int y = (blockIdx.y * blockDim.y) + threadIdx.y;
     int index = x + (y * resolution.x);
@@ -125,7 +126,7 @@ __global__ void clearDepthBuffer(glm::vec2 resolution, fragment* buffer, fragmen
       f.position.x = x;
       f.position.y = y;
       buffer[index] = f;
-      // depth[index] = f.position.z * INT_MAX;
+      depth[index] = 0;
     }
 }
 
@@ -196,7 +197,7 @@ __global__ void vertexShadeKernel(float* vbo, int vbosize, glm::vec2 resolution,
 	vbo[3*index+1] = resolution.y * 0.5f * (vertex.y + 1.0f);
 	vbo[3*index+2] = (zFar-zNear)*0.5f*vertex.z + (zFar+zNear)*0.5f;
 
- }
+  }
 }
 
 
@@ -270,8 +271,99 @@ __global__ void primitiveAssemblyKernel(float* vbo, int vbosize, float* cbo, int
   }
 }
 
+//DONE: Implement a rasterization method, such as scanline.
+/*
+   Given triangle coordinates, converted to screen coordinates, find fragments inside of triangle using AABB and brute force barycentric coords checks
+*/
+__global__ void rasterizationKernel(triangle* primitives, int primitivesCount, fragment* depthbuffer, unsigned int* depth, glm::vec2 resolution) {
 
-__global__ void rasterizationKernel(triangle* primitives, int primitivesCount, fragment* depthbuffer, glm::vec2 resolution){
+  int index = (blockIdx.x * blockDim.x) + threadIdx.x;
+
+  glm::vec2 p0;
+  glm::vec2 p1;
+  glm::vec2 p2;
+  glm::vec3 min_point;
+  glm::vec3 max_point;
+
+  triangle tri;
+  glm::vec3 bary_coord;
+
+  fragment frag;
+
+  float scale_x;
+  float scale_y;
+  float offs_x;
+  float offs_y;
+  if ( index<primitivesCount ) {
+
+    // Check if we should even bother with this triangle
+    if ( !primitives[index].toBeDiscard )
+      return;
+
+    // Map primitives from world to window coordinates using the viewport transform
+    scale_x = resolution.x/2;
+    scale_y = resolution.y/2;
+    offs_x = resolution.x/2;
+    offs_y = resolution.y/2;
+
+    tri.p0.x = scale_x*primitives[index].p0.x + offs_x;
+    tri.p1.x = scale_x*primitives[index].p1.x + offs_x;
+    tri.p2.x = scale_x*primitives[index].p2.x + offs_x;
+
+    tri.p0.y = offs_y - scale_y*primitives[index].p0.y;
+    tri.p1.y = offs_y - scale_y*primitives[index].p1.y;
+    tri.p2.y = offs_y - scale_y*primitives[index].p2.y;
+
+    // Backface culling
+    if ( calculateSignedArea( primitives[index] ) > 0.0f )
+      return;
+
+    // Bounding box
+    getAABBForTriangle( tri, min_point, max_point );
+
+    // Ensure window bounds are maintained
+    min_point.x = max( min_point.x, 0.0f );
+    min_point.y = max( min_point.y, 0.0f );
+    max_point.x = min( max_point.x, resolution.x );
+    max_point.y = min( max_point.y, resolution.y );
+
+    // For each pixel in the bounding box check if its in the triangle
+    for ( int x=glm::floor(min_point.x); x<glm::ceil(max_point.x); ++x ) {
+      for ( int y=glm::floor(min_point.y); y<glm::ceil(max_point.y); ++y ) {
+	int frag_index = x + (y * resolution.x);
+	bary_coord = calculateBarycentricCoordinate( tri, glm::vec2( x,y ) );
+	if ( isBarycentricCoordInBounds( bary_coord ) ) {
+
+	  // Color a fragment just for debugging sake
+	  frag.position = getXYZAtCoordinate( bary_coord, primitives[index] );
+	  frag.normal = bary_coord[0]*primitives[index].eyeNormal0 \
+		      + bary_coord[1]*primitives[index].eyeNormal1 \
+		      + bary_coord[2]*primitives[index].eyeNormal2;
+
+	  // Correct color interpolation on triangle
+	  frag.color = bary_coord[0]*primitives[index].c0 \
+		     + bary_coord[1]*primitives[index].c1 \
+		     + bary_coord[2]*primitives[index].c2;
+
+	  /*frag.lightdir = bary_coord[0]*primitives[index].eyeCoords0 \
+		        + bary_coord[1]*primitives[index].eyeCoords1 \
+		        + bary_coord[2]*primitives[index].eyeCoords2;*/
+
+	  // Block until its our turn to do a compare
+	  while ( !atomicCAS( &depth[frag_index], 0, 1 ) );
+	  fragment cur_frag = getFromDepthbuffer( x, y, depthbuffer, resolution );
+	  // If current value is gt than new value then update
+	  if ( frag.position.z > cur_frag.position.z )
+	    writeToDepthbuffer( x, y, frag, depthbuffer, resolution );
+	  // Release lock
+	  depth[frag_index] = 0;
+	}
+      }
+    }
+  }
+}
+
+__global__ void off_rasterizationKernel(triangle* primitives, int primitivesCount, fragment* depthbuffer, glm::vec2 resolution){
   int index = (blockIdx.x * blockDim.x) + threadIdx.x;
   if(index<primitivesCount){
 
@@ -399,6 +491,8 @@ void cudaRasterizeCore(uchar4* PBOpos, glm::vec2 resolution, float frame, float*
   depthbuffer = NULL;
   cudaMalloc((void**)&depthbuffer, (int)resolution.x*(int)resolution.y*sizeof(fragment));
 
+  depth = NULL;
+  cudaMalloc((void**)&depth, (int)resolution.x*(int)resolution.y*sizeof(unsigned int));
 
   //kernel launches to black out accumulated/unaccumlated pixel buffers and clear our scattering states
   clearImage<<<fullBlocksPerGrid, threadsPerBlock>>>(resolution, framebuffer, glm::vec3(0,0,0));
@@ -409,7 +503,7 @@ void cudaRasterizeCore(uchar4* PBOpos, glm::vec2 resolution, float frame, float*
   frag.position = glm::vec3(0,0,-10000);
   frag.lock = 0;
   frag.z = -FLT_MAX;
-  clearDepthBuffer<<<fullBlocksPerGrid, threadsPerBlock>>>(resolution, depthbuffer, frag);
+  clearDepthBuffer<<<fullBlocksPerGrid, threadsPerBlock>>>(resolution, depthbuffer, depth, frag);
 
   //------------------------------
   //memory stuff
@@ -454,7 +548,7 @@ void cudaRasterizeCore(uchar4* PBOpos, glm::vec2 resolution, float frame, float*
   //------------------------------
   //rasterization
   //------------------------------
-  rasterizationKernel<<<primitiveBlocks, tileSize>>>(primitives, ibosize/3, depthbuffer, resolution);
+  rasterizationKernel<<<primitiveBlocks, tileSize>>>(primitives, ibosize/3, depthbuffer, depth, resolution);
 
   cudaDeviceSynchronize();
   //------------------------------
@@ -486,4 +580,5 @@ void kernelCleanup(){
   cudaFree( depthbuffer );
   cudaFree( device_nbo );
   cudaFree( device_vbo_eye );
+  cudaFree( depth );
 }
