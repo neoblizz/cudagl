@@ -152,7 +152,7 @@ time_t seconds2 = time (NULL);
 
   }
 
-  string title = "CIS565 Rasterizer | "+ utilityCore::convertIntToString((int)fps) + "FPS";
+  string title = " Rasterizer | "+ utilityCore::convertIntToString((int)fps) + "FPS";
   glutSetWindowTitle(title.c_str());
 
   glBindBuffer( GL_PIXEL_UNPACK_BUFFER, pbo);
@@ -297,7 +297,7 @@ void init(int argc, char* argv[]){
   glutInit(&argc, argv);
   glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGBA);
   glutInitWindowSize(width, height);
-  glutCreateWindow("CIS565 Rasterizer");
+  glutCreateWindow("Rasterizer");
 
   // Init GLEW
   glewInit();
