@@ -38,4 +38,4 @@ clean:
 	rm cudagl
 
 test: cudagl
-	./cudagl
+	./cudagl mesh=../objs/cow.obj
