@@ -12,7 +12,7 @@
     #include <cutil_math.h>
 #endif
 
-#define BACKFACECULLING 1
+#define BACKFACECULLING 0
 
 glm::vec3* framebuffer;
 fragment* depthbuffer;
@@ -122,6 +122,7 @@ __global__ void clearDepthBuffer(glm::vec2 resolution, fragment* buffer, unsigne
     int index = x + (y * resolution.x);
     if(x<=resolution.x && y<=resolution.y){
       fragment f = frag;
+      f.normal = glm::vec3(0.0f);
       f.position.x = x;
       f.position.y = y;
       buffer[index] = f;
@@ -171,6 +172,10 @@ __global__ void vertexShadeKernel(float* vbo, int vbosize, glm::vec2 resolution,
     //vertex assembly
     glm::vec4 vertex(vbo[3*index], vbo[3*index+1], vbo[3*index+2], 1.0f);
     glm::vec4 normal(nbo[3*index], nbo[3*index+1], nbo[3*index+2], 1.0f);
+	
+	printf("screen space coordinate:\n");
+	printVec4(vertex);
+
 	// transform position to eye space
 	vertex = view*vertex;
 	vbo_eye[3*index]   = vertex.x;
@@ -439,10 +444,10 @@ __global__ void fragmentShadeKernel(fragment* depthbuffer, glm::vec2 resolution,
   int y = (blockIdx.y * blockDim.y) + threadIdx.y;
   int index = x + (y * resolution.x);
   if(x<=resolution.x && y<=resolution.y){
-	float specular = 100.0;//control width of specular lobe
+	float specular = 400.0;//control width of specular lobe
 	float a = 0.1;//ambient
-	float d = 0.1;//diffuse
-	float s = 0.1;//specular
+	float d = 0.7;//diffuse
+	float s = 0.2;//specular
 	fragment frag = depthbuffer[index];
 
 	glm::vec3 lightVector = glm::normalize(lightPosition - frag.position);  // watch out for division by zero
@@ -466,6 +471,8 @@ __global__ void render(glm::vec2 resolution, fragment* depthbuffer, glm::vec3* f
 
   if(x<=resolution.x && y<=resolution.y){
     framebuffer[index] = depthbuffer[index].color;
+    printf("piexel render color:\n");
+        printVec3(framebuffer[index]);
   }
 }
 
@@ -486,9 +493,6 @@ void cudaRasterizeCore(uchar4* PBOpos, glm::vec2 resolution, float frame, float*
 
   depth = NULL;
   cudaMalloc((void**)&depth, (int)resolution.x*(int)resolution.y*sizeof(unsigned int));
-
-  // depth = NULL;
-  // cudaMalloc((void**)&depth, (int)resolution.x * (int)resolution.y * sizeof(fragment));
 
   //kernel launches to black out accumulated/unaccumlated pixel buffers and clear our scattering states
   clearImage<<<fullBlocksPerGrid, threadsPerBlock>>>(resolution, framebuffer, glm::vec3(0,0,0));
@@ -550,6 +554,8 @@ void cudaRasterizeCore(uchar4* PBOpos, glm::vec2 resolution, float frame, float*
   //------------------------------
   //fragment shader
   //------------------------------
+  glm::vec4 light_eyespace = view * glm::vec4(lightPosition, 1.0f);
+  lightPosition = glm::vec3(light_eyespace.x, light_eyespace.y, light_eyespace.z);
   fragmentShadeKernel<<<fullBlocksPerGrid, threadsPerBlock>>>(depthbuffer, resolution, lightPosition, framebuffer);
   cudaDeviceSynchronize();
   //------------------------------
