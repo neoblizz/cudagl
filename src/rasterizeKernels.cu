@@ -270,7 +270,7 @@ __global__ void primitiveAssemblyKernel(float* vbo, int vbosize, float* cbo, int
 /*
    Given triangle coordinates, converted to screen coordinates, find fragments inside of triangle using AABB and brute force barycentric coords checks
 */
-__global__ void rasterizationKernel(triangle* primitives, int primitivesCount, fragment* depthbuffer, unsigned int* depth, glm::vec2 resolution) {
+__global__ void off_rasterizationKernel(triangle* primitives, int primitivesCount, fragment* depthbuffer, unsigned int* depth, glm::vec2 resolution) {
 
   int index = (blockIdx.x * blockDim.x) + threadIdx.x;
 
@@ -340,9 +340,9 @@ __global__ void rasterizationKernel(triangle* primitives, int primitivesCount, f
 		     + bary_coord[1]*primitives[index].c1 \
 		     + bary_coord[2]*primitives[index].c2;
 
-	  /*frag.lightdir = bary_coord[0]*primitives[index].eyeCoords0 \
+	  frag.lightdir = bary_coord[0]*primitives[index].eyeCoords0 \
 		        + bary_coord[1]*primitives[index].eyeCoords1 \
-		        + bary_coord[2]*primitives[index].eyeCoords2;*/
+		        + bary_coord[2]*primitives[index].eyeCoords2;
 
 	  // Block until its our turn to do a compare
 	  while ( !atomicCAS( &depth[frag_index], 0, 1 ) );
@@ -358,7 +358,7 @@ __global__ void rasterizationKernel(triangle* primitives, int primitivesCount, f
   }
 }
 
-__global__ void off_rasterizationKernel(triangle* primitives, int primitivesCount, fragment* depthbuffer, glm::vec2 resolution){
+__global__ void rasterizationKernel(triangle* primitives, int primitivesCount, fragment* depthbuffer, unsigned int* depth, glm::vec2 resolution){
   int index = (blockIdx.x * blockDim.x) + threadIdx.x;
   if(index<primitivesCount){
 
@@ -408,7 +408,7 @@ __global__ void off_rasterizationKernel(triangle* primitives, int primitivesCoun
 			  //in normalized device coordinate
 			  frag.position = glm::vec3(pixelPoint.x,pixelPoint.y,depth);
 			  //color interpolation
-			  // frag.color = barycCoord.x * primitives[index].c0 + barycCoord.y * primitives[index].c1 + barycCoord.z * primitives[index].c2;
+			  frag.color = barycCoord.x * primitives[index].c0 + barycCoord.y * primitives[index].c1 + barycCoord.z * primitives[index].c2;
 			  // frag.color = mat.diffuseColor;
 
 			  frag.normal = (primitives[index].eyeNormal0 + primitives[index].eyeNormal1
