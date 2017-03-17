@@ -1,11 +1,11 @@
-
-#ifndef RASTERIZETOOLS_H
-#define RASTERIZETOOLS_H
+#ifndef TOOLS_H
+#define TOOLS_H
 
 #include <cmath>
 #include "glm/glm.hpp"
 #include "utilities.h"
 #include "cudaMat4.h"
+#include "cudaError.h"
 
 struct vertex {
   glm::vec3 point;
@@ -115,4 +115,4 @@ __host__ __device__ glm::vec3 getXYZAtCoordinate(glm::vec3 barycentricCoord, tri
 		  ,-glm::dot(barycentricCoord,zs) );
 }
 
-#endif
+#endif //TOOLS_H

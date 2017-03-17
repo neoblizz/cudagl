@@ -3,8 +3,8 @@
 #include <cuda.h>
 #include <cmath>
 #include <thrust/random.h>
-#include "rasterizeKernels.h"
-#include "rasterizeTools.h"
+#include "render.h"
+#include "tools.h"
 
 #if CUDA_VERSION >= 5000
     #include <helper_math.h>
@@ -13,26 +13,6 @@
 #endif
 
 #define BACKFACECULLING 0
-
-glm::vec3* framebuffer;
-fragment* depthbuffer;
-unsigned int* depth;
-float* device_vbo;
-float* device_cbo;
-int* device_ibo;
-float* device_vbo_eye;
-float* device_nbo;
-vertex* vertices;
-triangle* primitives;
-
-
-void checkCUDAError(const char *msg) {
-  cudaError_t err = cudaGetLastError();
-  if( cudaSuccess != err) {
-    fprintf(stderr, "Cuda error: %s: %s.\n", msg, cudaGetErrorString( err) );
-    exit(EXIT_FAILURE);
-  }
-}
 
 //Handy dandy little hashing function that provides seeds for random number generation
 __host__ __device__ unsigned int hash(unsigned int a){

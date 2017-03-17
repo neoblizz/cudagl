@@ -1,4 +1,3 @@
-
 #ifndef MAIN_H
 #define MAIN_H
 
@@ -17,7 +16,7 @@
 #include "glslUtility.h"
 #include "glm/glm.hpp"
 #include "glm/gtc/matrix_transform.hpp"
-#include "rasterizeKernels.h"
+#include "render.h"
 #include "utilities.h"
 #include "ObjCore/objloader.h"
 

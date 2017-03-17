@@ -12,8 +12,8 @@ LFLAGS = -lglut -lGL -lGLEW
 
 all: cudagl
 
-rasterizeKernels.o: ../src/rasterizeKernels.cu ../src/rasterizeKernels.h ../src/rasterizeTools.h ../src/utilities.h ../src/cudaMat4.h
-	$(NVCC) $(CUDA_FLAGS) -c ../src/rasterizeKernels.cu
+rasterizeKernels.o: ../src/render.cu ../src/render.h ../src/tools.h ../src/utilities.h ../src/cudaMat4.h ../src/cudaError.h
+	$(NVCC) $(CUDA_FLAGS) -c ../src/render.cu
 
 glslUtility.o: ../src/glslUtility.cpp ../src/glslUtility.h
 	$(CPPC) $(LFLAGS) $(CUDA_FLAGS) -c ../src/glslUtility.cpp
