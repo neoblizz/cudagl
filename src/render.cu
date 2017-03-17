@@ -269,7 +269,7 @@ __global__ void rasterizationKernel(triangle* primitives, int primitivesCount, f
 
     // Check if we should even bother with this triangle
     if ( primitives[index].toBeDiscard ) {
-#if defined(DEBUG_STATISTICS)
+#if DEBUG_STATISTICS
 	if (index == 0) *numCulledTriangles = 0;
 	__syncthreads();
 	atomicAdd(numCulledTriangles, 1);
@@ -292,7 +292,7 @@ __global__ void rasterizationKernel(triangle* primitives, int primitivesCount, f
     tri.p2.y = offs_y - scale_y*primitives[index].p2.y;
 
     // Backface culling
-#if defined(BACKFACECULLING)
+#if BACKFACECULLING
     if ( calculateSignedArea( primitives[index] ) > 0.0f )
       return;
 #endif
@@ -452,7 +452,7 @@ void cudaRasterizeCore(glm::mat4 view, glm::mat4 projection, glm::vec3 light, in
   cudaMalloc((void**)&device_cbo, cbosize*sizeof(float));
   cudaMemcpy( device_cbo, cbo, cbosize*sizeof(float), cudaMemcpyHostToDevice);
 
-#if defined(DEBUG_STATISTICS)
+#if DEBUG_STATISTICS
   numCulledTriangles = NULL;
   cudaMalloc((void**)&numCulledTriangles, sizeof(int));
 #endif
@@ -476,7 +476,7 @@ void cudaRasterizeCore(glm::mat4 view, glm::mat4 projection, glm::vec3 light, in
   //rasterization
   //------------------------------
   rasterizationKernel<<<primitiveBlocks, tileSize>>>(primitives, ibosize/3, depthbuffer, depth, resolution, numCulledTriangles);
-#if defined(DEBUG_STATISTICS)
+#if DEBUG_STATISTICS
   int * host_CulledT;
   cudaHostAlloc((void**) &host_CulledT, sizeof(int), cudaHostAllocDefault);
   cudaMemcpy( host_CulledT, numCulledTriangles, sizeof(int), cudaMemcpyDeviceToHost);
