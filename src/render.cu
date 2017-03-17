@@ -12,7 +12,8 @@
     #include <cutil_math.h>
 #endif
 
-#define BACKFACECULLING 0
+#define BACKFACECULLING 1
+#define DEBUG_STATISTICS 0 
 
 glm::vec3* framebuffer;
 fragment* depthbuffer;
@@ -20,6 +21,7 @@ unsigned int* depth;
 float* device_vbo;
 float* device_cbo;
 int* device_ibo;
+int* numCulledTriangles;
 float* device_vbo_eye;
 float* device_nbo;
 vertex* vertices;
@@ -241,23 +243,10 @@ __global__ void primitiveAssemblyKernel(vertex* vertices, float* cbo, int cbosiz
     primitives[index].eyeCoords0 = vertices[i0].lightdir;
     primitives[index].eyeCoords1 = vertices[i1].lightdir;
     primitives[index].eyeCoords2 = vertices[i2].lightdir;
-
-/*#if defined(BACKFACECULLING)
-   if(calculateSignedArea(primitives[index]) < 1e-6) {
-      primitives[index].toBeDiscard = 1; // back facing triangles
-   }else{
-      glm::vec3 triMin, triMax;
-      getAABBForTriangle(primitives[index], triMin, triMax);
-         if(triMin.x > resolution.x || triMin.y > resolution.y || triMin.z > zFar ||
-           triMax.x < 0|| triMax.y < 0 || triMax.z < zNear)
-           primitives[index].toBeDiscard = 1;
-   }
-
-#endif*/
   }
 }
 
-__global__ void rasterizationKernel(triangle* primitives, int primitivesCount, fragment* depthbuffer, unsigned int* depth, glm::vec2 resolution) {
+__global__ void rasterizationKernel(triangle* primitives, int primitivesCount, fragment* depthbuffer, unsigned int* depth, glm::vec2 resolution, int* numCulledTriangles) {
 
   int index = (blockIdx.x * blockDim.x) + threadIdx.x;
 
@@ -279,8 +268,14 @@ __global__ void rasterizationKernel(triangle* primitives, int primitivesCount, f
   if ( index<primitivesCount ) {
 
     // Check if we should even bother with this triangle
-    if ( primitives[index].toBeDiscard )
-      return;
+    if ( primitives[index].toBeDiscard ) {
+#if defined(DEBUG_STATISTICS)
+	if (index == 0) *numCulledTriangles = 0;
+	__syncthreads();
+	atomicAdd(numCulledTriangles, 1);
+#endif
+	return;
+    }
 
     // Map primitives from world to window coordinates using the viewport transform
     scale_x = resolution.x/2;
@@ -297,8 +292,10 @@ __global__ void rasterizationKernel(triangle* primitives, int primitivesCount, f
     tri.p2.y = offs_y - scale_y*primitives[index].p2.y;
 
     // Backface culling
+#if defined(BACKFACECULLING)
     if ( calculateSignedArea( primitives[index] ) > 0.0f )
       return;
+#endif
 
     // Bounding box
     getAABBForTriangle( tri, min_point, max_point );
@@ -351,7 +348,7 @@ __global__ void rasterizationKernel(triangle* primitives, int primitivesCount, f
 __global__ void fragmentShadeKernel( fragment* depthbuffer, glm::vec2 resolution, int draw_mode ){
   int x = (blockIdx.x * blockDim.x) + threadIdx.x;
   int y = (blockIdx.y * blockDim.y) + threadIdx.y;
-  int index = x + (y * resolution.x);
+  // int index = x + (y * resolution.x);
 
   fragment frag;
 
@@ -455,6 +452,11 @@ void cudaRasterizeCore(glm::mat4 view, glm::mat4 projection, glm::vec3 light, in
   cudaMalloc((void**)&device_cbo, cbosize*sizeof(float));
   cudaMemcpy( device_cbo, cbo, cbosize*sizeof(float), cudaMemcpyHostToDevice);
 
+#if defined(DEBUG_STATISTICS)
+  numCulledTriangles = NULL;
+  cudaMalloc((void**)&numCulledTriangles, sizeof(int));
+#endif
+
   tileSize = 32;
   int primitiveBlocks = ceil(((float)vbosize/3)/((float)tileSize));
 
@@ -473,8 +475,13 @@ void cudaRasterizeCore(glm::mat4 view, glm::mat4 projection, glm::vec3 light, in
   //------------------------------
   //rasterization
   //------------------------------
-  rasterizationKernel<<<primitiveBlocks, tileSize>>>(primitives, ibosize/3, depthbuffer, depth, resolution);
-
+  rasterizationKernel<<<primitiveBlocks, tileSize>>>(primitives, ibosize/3, depthbuffer, depth, resolution, numCulledTriangles);
+#if defined(DEBUG_STATISTICS)
+  int * host_CulledT;
+  cudaHostAlloc((void**) &host_CulledT, sizeof(int), cudaHostAllocDefault);
+  cudaMemcpy( host_CulledT, numCulledTriangles, sizeof(int), cudaMemcpyDeviceToHost);
+  printf("Number of Culled Triangles: %d", *host_CulledT);
+#endif
   cudaDeviceSynchronize();
   //------------------------------
   //fragment shader
