@@ -21,7 +21,7 @@ glslUtility.o: ../src/glslUtility.cpp ../src/glslUtility.h
 utilities.o: ../src/utilities.cpp ../src/utilities.h ../src/cudaMat4.h
 	$(CPPC) $(CUDA_FLAGS) -c ../src/utilities.cpp
 
-main.o: ../src/main.cpp ../src/main.h ../src/rasterizeKernels.h ../src/utilities.h ../src/cudaMat4.h
+main.o: ../src/main.cpp ../src/main.h ../src/render.h ../src/utilities.h ../src/cudaMat4.h
 	$(CPPC) $(LFLAGS) $(CUDA_FLAGS) -c ../src/main.cpp
 
 obj.o: ../src/ObjCore/obj.cpp

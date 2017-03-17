@@ -14,6 +14,17 @@
 
 #define BACKFACECULLING 0
 
+glm::vec3* framebuffer;
+fragment* depthbuffer;
+unsigned int* depth;
+float* device_vbo;
+float* device_cbo;
+int* device_ibo;
+float* device_vbo_eye;
+float* device_nbo;
+vertex* vertices;
+triangle* primitives;
+
 //Handy dandy little hashing function that provides seeds for random number generation
 __host__ __device__ unsigned int hash(unsigned int a){
     a = (a+0x7ed55d16) + (a<<12);
