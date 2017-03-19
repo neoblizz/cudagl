@@ -1,0 +1,54 @@
+# 
+# Wavefront material file
+# Converted by the DEEP Exploration  Deep Exploration 6.5 x64 6.5.0.9182
+# Right Hemisphere, LTD
+# http://www.righthemisphere.com/
+# 
+
+newmtl VEH_Laserbeak_MATINST
+Ka 0 0 0
+Kd 1 1 1
+Ks 1 1 1
+illum 2
+Ns 25.1067
+map_Kd VH_Laserbeak_TEXTSET_Color_NormX.png
+map_bump VH_Laserbeak_TEXTSET_bump.png
+bump VH_Laserbeak_TEXTSET_bump.png
+map_opacity 
+map_d 
+refl 
+map_kS VH_Laserbeak_TEXTSET_spec.png
+map_kA 
+map_Ns 
+
+newmtl VH_LaserbeakWing_MATINST
+Ka 0 0 0
+Kd 1 1 1
+Ks 1 1 1
+illum 2
+Ns 27.3208
+map_Kd VH_LaserbeakWing_TEXTSET_Color_NormX.png
+map_bump VH_LaserbeakWing_TEXTSET_bump.png
+bump VH_LaserbeakWing_TEXTSET_bump.png
+map_opacity 
+map_d 
+refl 
+map_kS VH_LaserbeakWing_TEXTSET_spec.png
+map_kA 
+map_Ns 
+
+newmtl Explorer_Default
+Ka 0.117647 0.117647 0.117647
+Kd 0.752941 0.752941 0.752941
+Ks 0.752941 0.752941 0.752941
+illum 2
+Ns 8
+map_Kd 
+map_bump 
+bump 
+map_opacity 
+map_d 
+refl 
+map_kS 
+map_kA 
+map_Ns 
